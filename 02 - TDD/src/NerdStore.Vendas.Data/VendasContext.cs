@@ -1,7 +1,8 @@
 ﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
 using NerdStore.Core.Data;
-using NerdStore.Core.DomainObjects;
+using NerdStore.Vendas.Domain;
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -15,38 +16,30 @@ namespace NerdStore.Vendas.Data
         {
             _mediator = mediator;
         }
-        
+
+        public DbSet<Pedido> Pedidos { get; set; }
+        public DbSet<PedidoItem> PedidoItems { get; set; }
+        public DbSet<Voucher> Vouchers { get; set; }
+
         public async Task<bool> Commit()
         {
+            foreach (var entry in ChangeTracker.Entries().Where(entry => entry.Entity.GetType().GetProperty("DataCadastro") != null))
+            {
+                if (entry.State == EntityState.Added)
+                {
+                    entry.Property("DataCadastro").CurrentValue = DateTime.Now;
+                }
+
+                if (entry.State == EntityState.Modified)
+                {
+                    entry.Property("DataCadastro").IsModified = false;
+                }
+            }
+
             var sucesso = await base.SaveChangesAsync() > 0;
             if (sucesso) await _mediator.PublicarEventos(this);
 
             return sucesso;
-        }
-    }
-
-    public static class MediatorExtension
-    {
-        public static async Task PublicarEventos(this IMediator mediator, VendasContext ctx)
-        {
-            var domainEntities = ctx.ChangeTracker
-                .Entries<Entity>()
-                .Where(x => x.Entity.Notificacoes != null && x.Entity.Notificacoes.Any());
-
-            var domainEvents = domainEntities
-                .SelectMany(x => x.Entity.Notificacoes)
-                .ToList();
-
-            domainEntities.ToList()
-                .ForEach(entity => entity.Entity.LimparEventos());
-
-            var tasks = domainEvents
-                .Select(async (domainEvent) =>
-                {
-                    await mediator.Publish(domainEvents);
-                });
-
-            await Task.WhenAll(tasks);
         }
     }
 }
